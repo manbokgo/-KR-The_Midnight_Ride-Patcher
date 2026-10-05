@@ -18,6 +18,11 @@ import tmrkr
 from tmrkr_sst import read_sst, custom_text_mapping
 
 
+EXCLUDED_PLUGINS = {
+    "ptrfo4001_t60pistol.esl",
+    "ptrfo4002_vangraff.esl",
+}
+
 MCM_TARGETS = [
     ("MCM/Config/Complex Vendors/config.json", "Complex Vendors_config_en_ko.json"),
     ("MCM/Config/CraftingHighlightFix/config.json", "CraftingHighlightFix_config_en_ko.json"),
@@ -25,6 +30,7 @@ MCM_TARGETS = [
     ("MCM/Config/UnlimitedSurvivalMode/config.json", "UnlimitedSurvivalMode_config_en_ko.json"),
     ("MCM/Config/Upscaling/config.json", "Upscaling_config_en_ko.json"),
 ]
+
 INTERFACE_TARGETS = [
     ("Interface/Translations/MCM_en.txt", "mcm_mcm_en_ko.sst", "MCM_en.json"),
     ("Interface/Translations/Safe Travels_en.txt", "safe travels_mcm_en_ko.sst", "Safe Travels_en.json"),
@@ -93,6 +99,8 @@ def main() -> int:
 
     for plugin in installation.active:
         lower = plugin.casefold()
+        if lower in EXCLUDED_PLUGINS:
+            continue
         if lower in official or (lower.startswith("cc") and lower.endswith(".esl")):
             continue
 

@@ -1,4 +1,4 @@
-"""Build a safe manual-copy MO2 Output tree for The Midnight Ride Korean patcher."""
+"""Build a merge-ready MO2 Output tree for The Midnight Ride Korean patcher."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -15,9 +15,11 @@ OFFICIAL_MASTERS = {
     "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm", "dlccoast.esm",
     "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
 }
-BASE_MOD = "TMR Korean - Base Game"
-PLUGIN_MOD = "TMR Korean - Plugins"
-MCM_MOD = "TMR Korean - MCM"
+BASE_MOD = "FO4 KOREAN"
+EXCLUDED_PLUGINS = {
+    "ptrfo4001_t60pistol.esl",
+    "ptrfo4002_vangraff.esl",
+}
 
 
 def _read_json(path: Path):
@@ -37,15 +39,15 @@ def _contained(root: Path, relative: str | Path) -> Path:
     return target
 
 
-def _copy_tree(source: Path, target: Path):
+def _copy_tree(source: Path, target: Path) -> int:
     if not source.is_dir():
         return 0
     count = 0
     for path in source.rglob("*"):
         if not path.is_file():
             continue
-        relative = path.relative_to(source)
-        dest = _contained(target, relative)
+        rel = path.relative_to(source)
+        dest = _contained(target, rel)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, dest)
         count += 1
@@ -96,45 +98,66 @@ def _copy_en_sidecars(source_dir: Path, target_strings: Path) -> int:
         return 0
     copied = 0
     for path in strings.iterdir():
-        if not path.is_file():
-            continue
-        lower = path.name.casefold()
-        if "_en." not in lower:
-            continue
-        target_strings.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target_strings / path.name)
-        copied += 1
+        if path.is_file() and "_en." in path.name.casefold():
+            target_strings.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target_strings / path.name)
+            copied += 1
     return copied
 
 
 def _plugin_map(catalog_dir: Path, entry: dict) -> Path | None:
-    relative = entry.get("direct_mapping")
-    if not relative:
+    rel = entry.get("direct_mapping")
+    if not rel:
         return None
-    path = _contained(catalog_dir, relative)
+    path = _contained(catalog_dir, rel)
     return path if path.is_file() else None
 
 
-def _run_fallback(source: Path, plugin: str, entry: dict | None, catalog_dir: Path, temp: Path) -> tuple[dict, Path | None]:
+def _run_fallback(source: Path, plugin: str, entry: dict | None,
+                  catalog_dir: Path, temp: Path) -> tuple[dict, Path | None]:
     backend = _contained(catalog_dir, "Backend/TmrPluginTranslator.exe")
     bank = _contained(catalog_dir, "fallback/fallout4-base-dlc-fallback.json")
     direct = _plugin_map(catalog_dir, entry or {})
-    output_dir = temp / "fallback" / plugin.replace(":", "_")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / plugin
-    command = [str(backend), str(source), str(direct) if direct else "-", str(bank), str(output)]
-    run = subprocess.run(command, text=True, encoding="utf-8", errors="replace",
-                         capture_output=True, timeout=180)
+    outdir = temp / "fallback" / plugin.replace(":", "_")
+    outdir.mkdir(parents=True, exist_ok=True)
+    output = outdir / plugin
+    run = subprocess.run(
+        [str(backend), str(source), str(direct) if direct else "-", str(bank), str(output)],
+        text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=180)
     if run.returncode:
         raise RuntimeError(f"{plugin} fallback failed:\n{run.stderr[-4000:]}")
-    detail = {}
-    lines = [line for line in run.stdout.splitlines() if line.strip()]
-    if lines:
-        detail = json.loads(lines[-1])
+    lines = [x for x in run.stdout.splitlines() if x.strip()]
+    detail = json.loads(lines[-1]) if lines else {}
     return detail, output if output.is_file() else None
 
 
-def build_output(mo2_root: Path, base_package: Path, catalog_dir: Path, output: Path, profile: str | None = None) -> dict:
+def _winner(installation: tmrkr.Installation, relative: str) -> dict:
+    key = tmrkr.safe_relative(relative).casefold()
+    chain = installation.providers.get(key)
+    if not chain:
+        raise ValueError(f"No provider for: {relative}")
+    return chain[-1]
+
+
+def _provider_target(stage: Path, winner: dict) -> Path:
+    provider = winner["provider"]
+    relative = tmrkr.safe_relative(winner["path"])
+
+    if provider == "game:Data":
+        # Game/Creation files are overridden through the toggleable FO4 KOREAN MO2 mod.
+        return _contained(stage / "mods" / BASE_MOD, relative)
+
+    if provider == "MO2:overwrite":
+        return _contained(stage / "overwrite", relative)
+
+    mod_name = tmrkr.safe_relative(provider)
+    if "/" in mod_name:
+        raise ValueError(f"Invalid MO2 mod provider name: {provider}")
+    return _contained(stage / "mods" / mod_name, relative)
+
+
+def build_output(mo2_root: Path, base_package: Path, catalog_dir: Path,
+                 output: Path, profile: str | None = None) -> dict:
     installation = tmrkr.Installation(mo2_root, profile)
     catalog = _read_json(catalog_dir / "catalog.json")
     if catalog.get("schema_version") != 1:
@@ -151,12 +174,12 @@ def build_output(mo2_root: Path, base_package: Path, catalog_dir: Path, output: 
     output.parent.mkdir(parents=True, exist_ok=True)
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "tool_version": tmrkr.VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "mo2_root": str(installation.root),
         "profile": installation.profile,
-        "base_package": str(base_package.resolve()),
+        "base_package": "bundled:FO4_AE_1.11.191.Kor",
         "output": str(output),
         "plugins": [],
         "base_files": 0,
@@ -169,88 +192,89 @@ def build_output(mo2_root: Path, base_package: Path, catalog_dir: Path, output: 
         temp = Path(tmp_name)
         stage = temp / "Output"
         base_mod = stage / "mods" / BASE_MOD
-        plugin_mod = stage / "mods" / PLUGIN_MOD
-        mcm_mod = stage / "mods" / MCM_MOD
 
-        # Preserve the English-base runtime filenames exactly as supplied by the Korean package.
         for folder in ("Interface", "Programs", "Strings"):
             report["base_files"] += _copy_tree(base_package / folder, base_mod / folder)
 
         for plugin in installation.active:
             lower = plugin.casefold()
-            if lower in OFFICIAL_MASTERS or (lower.startswith("cc") and lower.endswith(".esl")):
+            if (lower in OFFICIAL_MASTERS
+                    or lower in EXCLUDED_PLUGINS
+                    or (lower.startswith("cc") and lower.endswith(".esl"))):
                 continue
             try:
                 source = installation.source(plugin)
+                winner = _winner(installation, plugin)
             except Exception as exc:
                 report["plugins"].append({"plugin": plugin, "status": "source_missing", "error": str(exc)})
                 continue
 
             entry = plugins_catalog.get(lower)
             source_hash = tmrkr.sha256(source)
-            result = {"plugin": plugin, "source_sha256": source_hash,
-                      "provider": installation.providers[lower][-1]["provider"]}
+            target = _provider_target(stage, winner)
+            result = {
+                "plugin": plugin,
+                "source_sha256": source_hash,
+                "provider": winner["provider"],
+                "relative_path": winner["path"],
+            }
 
             if entry and source_hash == entry.get("source_sha256"):
-                status = entry.get("baseline_status")
-                payload_rel = entry.get("payload")
-                if status == "translated" and payload_rel:
-                    payload = _contained(catalog_dir, payload_rel)
+                if entry.get("baseline_status") == "translated" and entry.get("payload"):
+                    payload = _contained(catalog_dir, entry["payload"])
                     if tmrkr.sha256(payload) != entry["payload_sha256"]:
                         raise ValueError(f"Payload hash mismatch: {plugin}")
-                    plugin_mod.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(payload, plugin_mod / plugin)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(payload, target)
                     sidecars = 0
-                    sidecar_dir = entry.get("sidecar_dir")
-                    if sidecar_dir:
-                        sidecars = _copy_en_sidecars(_contained(catalog_dir, sidecar_dir), plugin_mod / "Strings")
+                    if entry.get("sidecar_dir"):
+                        sidecars = _copy_en_sidecars(
+                            _contained(catalog_dir, entry["sidecar_dir"]),
+                            target.parent / "Strings")
                     result.update(status="exact_payload", changed=entry.get("changed", 0), sidecars=sidecars)
                 else:
                     result.update(status="known_no_translation_needed", changed=0)
                 report["plugins"].append(result)
                 continue
 
-            # Changed or newly discovered plugin: merge direct dictionary + official base/DLC inheritance.
             detail, translated = _run_fallback(source, plugin, entry, catalog_dir, temp)
             if translated is None or detail.get("status") == "no_changes":
-                result.update(status="updated_no_match" if entry else "new_no_match", changed=0,
-                              detail=detail)
+                result.update(status="updated_no_match" if entry else "new_no_match", changed=0, detail=detail)
             else:
-                plugin_mod.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(translated, plugin_mod / plugin)
-                sidecars = _copy_en_sidecars(translated.parent, plugin_mod / "Strings")
-                result.update(status="updated_fallback" if entry else "new_inherited",
-                              changed=detail.get("changed", 0), sidecars=sidecars, detail=detail)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(translated, target)
+                sidecars = _copy_en_sidecars(translated.parent, target.parent / "Strings")
+                result.update(
+                    status="updated_fallback" if entry else "new_inherited",
+                    changed=detail.get("changed", 0), sidecars=sidecars, detail=detail)
             report["plugins"].append(result)
 
-        # Apply dictionaries to the current enabled MCM JSON so new settings are retained.
         for spec in catalog.get("mcm", []):
             relative = spec["path"]
             try:
                 source = installation.source(relative)
+                winner = _winner(installation, relative)
             except Exception:
                 continue
-            mapping = _contained(catalog_dir, spec["mapping"])
-            target = _contained(mcm_mod, relative)
-            stats = translate_mcm_json(source, mapping, target)
-            report["mcm"].append({"path": relative, **stats})
+            target = _provider_target(stage, winner)
+            stats = translate_mcm_json(source, _contained(catalog_dir, spec["mapping"]), target)
+            report["mcm"].append({"path": relative, "provider": winner["provider"], **stats})
 
-        # Interface/Translations also keep their _en names because Fallout 4 runs in English.
         for spec in catalog.get("interface", []):
             relative = spec["path"]
             try:
                 source = installation.source(relative)
+                winner = _winner(installation, relative)
             except Exception:
                 continue
-            target = _contained(mcm_mod, relative)
+            target = _provider_target(stage, winner)
             stats = _translate_interface(source, _contained(catalog_dir, spec["mapping"]), target)
-            report["interface"].append({"path": relative, **stats})
+            report["interface"].append({"path": relative, "provider": winner["provider"], **stats})
 
-        if not any((base_mod.exists(), plugin_mod.exists(), mcm_mod.exists())):
+        if not (stage / "mods").is_dir():
             raise RuntimeError("No output was generated")
 
-        report_path = stage / "TMR-Korean-Patcher-report.json"
-        _write_json(report_path, report)
+        _write_json(stage / "TMR-Korean-Patcher-report.json", report)
         stage.rename(output)
 
     return report

@@ -18,10 +18,14 @@ xTranslator was used as a development reference for the SST file format and stri
 
 No xTranslator binary or source file is bundled in the release package.
 
+## FO4_AE_1.11.191.Kor
+
+The release package includes the unofficial Korean resource package `FO4_AE_1.11.191.Kor`. It is included as a redistributable Korean patch resource so users do not need to obtain or select it separately.
+
 ## Python / PyInstaller
 
 The Windows GUI executable is packaged from Python source with PyInstaller. Python and PyInstaller retain their respective upstream licenses.
 
 ## Bethesda / Fallout
 
-Fallout, Fallout 4, game files, names, and related trademarks are property of their respective rights holders. This project does not redistribute the Fallout 4 game files or the separate base-game Korean resource package.
+Fallout, Fallout 4, game files, names, and related trademarks are property of their respective rights holders. This project is an unofficial community localization tool.

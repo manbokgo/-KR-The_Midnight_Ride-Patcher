@@ -9,9 +9,9 @@ dist/
 bin/
 obj/
 Output*/
-ReleaseBuild/
-ReleasePackage/
-ReleaseZipTest/
+ReleaseBuild*/
+ReleasePackage*/
+ReleaseZipTest*/
 TMR-Korean-Patcher-v*.zip
 TranslationData/generated/
 reports/
@@ -22,3 +22,7 @@ vendor/
 .patch_program.py
 docs/*inventory.json
 tools/TmrPluginTranslator/api.txt
+FO4_AE_1.11.191.Kor/
+ReleaseBase/
+.v101-*/
+PathLayoutTest*/

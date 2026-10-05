@@ -86,6 +86,10 @@ def main() -> int:
         "dlcworkshop03.esm",
         "dlcnukaworld.esm",
     }
+    excluded_plugins = {
+        "ptrfo4001_t60pistol.esl",
+        "ptrfo4002_vangraff.esl",
+    }
 
     results = []
 
@@ -95,7 +99,9 @@ def main() -> int:
         lower = plugin.casefold()
         if only and lower not in only:
             continue
-        if lower in official_masters or (lower.startswith("cc") and lower.endswith(".esl")):
+        if (lower in official_masters
+                or lower in excluded_plugins
+                or (lower.startswith("cc") and lower.endswith(".esl"))):
             continue
 
         try:

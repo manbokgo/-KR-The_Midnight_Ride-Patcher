@@ -4,13 +4,31 @@ import unittest
 from pathlib import Path
 
 import tmrkr
-from tmrkr_output import _contained, _translate_interface
+from tmrkr_output import BASE_MOD, EXCLUDED_PLUGINS, _contained, _provider_target, _translate_interface
 from tmrkr_mcm import translate_mcm_json
 
 
 class OutputTests(unittest.TestCase):
     def test_release_version(self):
-        self.assertEqual(tmrkr.VERSION, "1.0.0")
+        self.assertEqual(tmrkr.VERSION, "1.0.1")
+
+    def test_removed_ptr_plugins_stay_excluded(self):
+        self.assertIn("ptrfo4001_t60pistol.esl", EXCLUDED_PLUGINS)
+        self.assertIn("ptrfo4002_vangraff.esl", EXCLUDED_PLUGINS)
+
+    def test_provider_target_preserves_original_mod_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            winner = {"provider": "Previsibines Repair Pack - Full (1.11.191)", "path": "prp.esp"}
+            self.assertEqual(
+                _provider_target(stage, winner),
+                (stage / "mods" / "Previsibines Repair Pack - Full (1.11.191)" / "prp.esp").resolve(),
+            )
+            game = {"provider": "game:Data", "path": "Interface/Translate_en.txt"}
+            self.assertEqual(
+                _provider_target(stage, game),
+                (stage / "mods" / BASE_MOD / "Interface" / "Translate_en.txt").resolve(),
+            )
 
     def test_contained_rejects_parent_escape(self):
         with tempfile.TemporaryDirectory() as tmp:
